@@ -217,54 +217,67 @@ class SchoolHierarchyAPIView(APIView):
                 head_of_room = Personnel.objects.filter(school_class=class_obj, personnel_type=1).first()
                 students = Personnel.objects.filter(school_class=class_obj, personnel_type=2)
 
-                class_teacher_data = {f"Teacher": f"{class_teacher.first_name} {class_teacher.last_name}"} if class_teacher else None
+                class_teacher_data = {f"Teacher: {class_teacher.first_name} {class_teacher.last_name}": []} if class_teacher else None
                 head_of_room_data = {f"Head of the room": f"{head_of_room.first_name} {head_of_room.last_name}"} if head_of_room else None
 
                 students_data = [{f"Student": f"{student.first_name} {student.last_name}"} for student in students]
 
-                class_data[f"class {class_obj.class_order}"] = {
-                    **class_teacher_data,
-                    **head_of_room_data,
-                    **{"Students": students_data}
-                }
+                if class_teacher_data:
+                    class_teacher_data[f"Teacher: {class_teacher.first_name} {class_teacher.last_name}"].append(head_of_room_data)
+                    class_teacher_data[f"Teacher: {class_teacher.first_name} {class_teacher.last_name}"].extend(students_data)
+
+                class_data[f"class {class_obj.class_order}"] = class_teacher_data
 
             school_data.update(class_data)
             result.append(school_data)
 
         return Response(result, status=status.HTTP_200_OK)
 
+
 class SchoolStructureAPIView(APIView):
 
     @staticmethod
     def get(request, *args, **kwargs):
 
-        # Retrieve the SchoolStructure objects with titles "มัธยมต้น" and "มัธยมปลาย"
-        lower_secondary_structure = SchoolStructure.objects.get(title="มัธยมต้น")
-        upper_secondary_structure = SchoolStructure.objects.get(title="มัธยมปลาย")
+        # Initialize your_result
+        result = []
 
-        # Function to recursively generate the structure hierarchy
-        def generate_hierarchy(structure):
-            structure_data = {
-                "title": structure.title,
+        # Fetch all root SchoolStructure objects
+        root_school_structures = SchoolStructure.objects.filter(parent=None)
+
+        # Iterate over root SchoolStructure objects
+        for root_structure in root_school_structures:
+            # Create a dictionary to hold the structure data
+            root_data = {
+                "title": root_structure.title,
                 "sub": []
             }
+            # Populate sub-structures recursively
+            SchoolStructureAPIView.populate_sub_structure(root_structure, root_data["sub"])
+            # Append the root data to your_result
+            result.append(root_data)
 
-            # Retrieve sub-structures for the current structure
-            sub_structures = SchoolStructure.objects.filter(parent=structure)
+        # Return your_result
+        return Response(result, status=status.HTTP_200_OK)
 
-            # Loop through each sub-structure
-            for sub_structure in sub_structures:
-                sub_structure_data = generate_hierarchy(sub_structure)
-                structure_data["sub"].append(sub_structure_data)
+    @staticmethod
+    def populate_sub_structure(parent_structure, sub_data):
 
-            return structure_data
-
-        # Generate the hierarchy for lower secondary structure
-        lower_secondary_data = generate_hierarchy(lower_secondary_structure)
-
-        # Generate the hierarchy for upper secondary structure
-        upper_secondary_data = generate_hierarchy(upper_secondary_structure)
-
-        data_pattern = [lower_secondary_data, upper_secondary_data]
-
-        return Response(data_pattern, status=status.HTTP_200_OK)
+        # Fetch all child SchoolStructure objects for the given parent_structure
+        child_structures = SchoolStructure.objects.filter(parent=parent_structure)
+        # Iterate over child SchoolStructure objects
+        for child_structure in child_structures:
+            # Create a dictionary to hold the child structure data
+            child_data = {
+                "title": child_structure.title,
+                "sub": []  # Add an empty list for subgroups
+            }
+            # If the child is a classroom, populate its subgroups
+            if child_structure.title.startswith("ม."):
+                # Fetch all subgroups for the classroom
+                subgroups = SchoolStructure.objects.filter(parent=child_structure)
+                # Iterate over subgroups and append to the child data
+                for subgroup in subgroups:
+                    child_data["sub"].append({"title": subgroup.title})
+            # Append the child data to sub_data
+            sub_data.append(child_data)
